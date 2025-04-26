@@ -18,7 +18,7 @@ html = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Baby Sleep Tracker</title>
+    <title>The Tank Tracker</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
       body { font-family: Arial, sans-serif; margin: 12px; }
@@ -32,7 +32,7 @@ html = """
     </style>
 </head>
 <body>
-    <h1>Baby Sleep Tracker</h1>
+    <h1>The Tank Tracker</h1>
     <h2>Baby Info</h2>
     <form method="POST" action="/">
         <label for="name">Baby's Name:</label>
