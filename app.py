@@ -76,7 +76,7 @@ if(!sessionStorage.getItem('sleep_start')) {
 
 
 </script>
-    <title>The Tank Tracker</title>
+    <title>Baby Sleep and Feeding Tracker</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
       body { font-family: Arial, sans-serif; margin: 12px; }
@@ -90,7 +90,7 @@ if(!sessionStorage.getItem('sleep_start')) {
     </style>
 </head>
 <body>
-    <h1>The Tank Tracker</h1>
+    <h1>Baby Sleep and Feeding Tracker</h1>
     <h2>Baby Info</h2>
     <form method="POST" action="/">
         <label for="name">Baby's Name:</label>
@@ -694,8 +694,8 @@ def get_next_feed_suggestion(last_feed_time, now, age_weeks):
 
 def get_last_breast_side(feed_logs):
     for feed in reversed(feed_logs):
-        if len(feed) >= 3:  # [2] is the side
-            side = feed[4].strip()
+        if len(feed) > 4 and feed[0].lower() == "breast":
+            side = feed[4].strip() if feed[4] else ""
             if side in ["Left", "Right", "Both"]:
                 return side
     return None
