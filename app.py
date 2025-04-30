@@ -1,9 +1,19 @@
 import csv
 import os
+os.environ['TZ'] = 'America/Los_Angeles'
 from datetime import datetime, date, timedelta
-from flask import Flask, render_template_string, request, redirect, url_for
+from flask import Flask, render_template_string, request, redirect, url_for, session, jsonify
+import pytz
 
 app = Flask(__name__)
+app.secret_key = os.environ.get('SECRET_KEY') or 'dev-secret-123'  # For session
+
+@app.route('/set_timezone', methods=['POST'])
+def set_timezone():
+    timezone = request.json.get('timezone', 'UTC')
+    session['user_timezone'] = timezone
+    return jsonify({'status': 'success'})
+
 app.context_processor(lambda: dict(enumerate=enumerate))
 
 @app.context_processor
@@ -13,11 +23,59 @@ def inject_enumerate():
 CSV_BABY = 'baby_info.csv'
 CSV_SLEEP = 'sleep_log.csv'
 CSV_FEED = 'feeding_log.csv'
+CURRENT_SLEEP_FILE = 'current_sleep.txt'
 
 html = """
 <!DOCTYPE html>
 <html>
 <head>
+
+<script>
+
+// Timezone detection script
+    document.addEventListener('DOMContentLoaded', function() {
+        try {
+            const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+            console.log('Detected timezone:', timezone);
+            fetch('/set_timezone', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ timezone: timezone })
+            });
+        } catch (error) {
+            console.error('Error detecting/sending timezone:', error);
+        }
+    });
+
+// Preserve form values on page reload
+window.addEventListener('beforeunload', function() {
+    const sleepStart = document.getElementById('sleep_start').value;
+    const sleepEnd = document.getElementById('sleep_end').value;
+    if(sleepStart) sessionStorage.setItem('sleep_start', sleepStart);
+    if(sleepEnd) sessionStorage.setItem('sleep_end', sleepEnd);
+});
+
+// Restore form values on page load
+document.addEventListener('DOMContentLoaded', function() {
+    // Only clear if there is no session data AND no server-tracked sleep
+    const sleepStatus = document.getElementById('sleepStatus');
+    const hasOngoingSleep = sleepStatus && sleepStatus.textContent.includes('ongoing');
+    if (!sessionStorage.getItem('sleep_start') && !hasOngoingSleep) {
+        document.getElementById('sleep_start').value = '';
+        document.getElementById('sleep_end').value = '';
+    }
+});
+
+
+// Clear fields on initial load if no session data
+if(!sessionStorage.getItem('sleep_start')) {
+    document.getElementById('sleep_start').value = '';
+    document.getElementById('sleep_end').value = '';
+}
+</script>
+
+
+</script>
     <title>The Tank Tracker</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
@@ -60,7 +118,7 @@ html = """
         <li>Last feeding: {{ last_feed_time_str or 'N/A' }} ({{ last_feed_ago or 'N/A' }} ago)</li>
         <li>Last sleep ended: {{ last_sleep_end_str or 'N/A' }} ({{ last_sleep_ago or 'N/A' }} ago)</li>
         <li>Total sleep in last 24h: {{ total_sleep_24h }} hours</li>
-        <li>Total feedings in last 24h: {{ total_feeds_24h }}</li>
+        <li>Total feedings in last 24h: {{ total_feeds_count }} ({{ total_feeds_oz }}oz total)</li>
       </ul>
       {% if next_feed_suggestion %}
         <div style="margin-top:0.5em;"><strong>Tip:</strong> {{ next_feed_suggestion }}</div>
@@ -68,20 +126,88 @@ html = """
     </div>
 
     <h2>Log Sleep</h2>
-    <form method="POST" action="/log_sleep">
-        <label for="sleep_start">Sleep Start:</label>
-        <input type="datetime-local" id="sleep_start" name="sleep_start" required>
-        <label for="sleep_end">Sleep End:</label>
-        <input type="datetime-local" id="sleep_end" name="sleep_end" required>
-        <button type="submit">Log Sleep</button>
-    </form>
+<div id="sleepStatus" style="margin-bottom:1em;">
+</div>
+
+<form method="POST" action="/log_sleep" id="sleepForm">
+    <div style="margin-bottom: 0.5em;">
+        <button type="button" id="sleepStartBtn" {% if current_sleep %}disabled{% endif %}>
+            Start Sleep Now
+        </button>
+        <button type="button" id="sleepEndBtn" {% if not current_sleep %}disabled{% endif %}>
+            End Sleep Now
+        </button>
+    </div>
+    <label for="sleep_start">Sleep Start:</label>
+    <input type="datetime-local" id="sleep_start" name="sleep_start">
+    <label for="sleep_end">Sleep End:</label>
+    <input type="datetime-local" id="sleep_end" name="sleep_end">
+    <input type="hidden" id="sleep_was_tracked" name="sleep_was_tracked" value="0">
+    <button type="submit">Log Sleep</button>
+</form>
+
+
+<script>
+document.getElementById('sleepStartBtn').addEventListener('click', function() {
+    fetch('/start_sleep', { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                // Convert UTC to local time correctly
+                const utcDate = new Date(data.start_time + 'Z');
+                const localDate = new Date(utcDate.getTime() - (utcDate.getTimezoneOffset() * 60000));
+                const localISOTime = localDate.toISOString().slice(0, 16);
+                
+                // Update UI elements
+                document.getElementById('sleep_start').value = localISOTime;
+                document.getElementById('sleepStatus').innerHTML = 
+                    `⏳ Sleep ongoing since ${utcDate.toLocaleTimeString('en-US', { 
+                        hour: '2-digit', 
+                        minute: '2-digit',
+                        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+                    })}`;
+                document.getElementById('sleepEndBtn').disabled = false;
+                document.getElementById('sleepStartBtn').disabled = true;
+            }
+        });
+});
+
+document.getElementById('sleepEndBtn').addEventListener('click', function() {
+    fetch('/end_sleep', { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                // Use the server UTC time, convert to local for input field
+                const utcDate = new Date(data.end_time + 'Z');
+                const localDate = new Date(utcDate.getTime() - (utcDate.getTimezoneOffset() * 60000));
+                const localISOTime = localDate.toISOString().slice(0, 16);
+
+                document.getElementById('sleep_end').value = localISOTime;
+                document.getElementById('sleepStatus').innerHTML = '';
+                document.getElementById('sleepEndBtn').disabled = true;
+                document.getElementById('sleepStartBtn').disabled = false;
+
+                // Clear session storage
+                sessionStorage.removeItem('sleep_start');
+                sessionStorage.removeItem('sleep_end');
+
+                document.getElementById('sleep_was_tracked').value = "1";
+            }
+        });
+});
+
+
+</script>
+
+
+
 
     <h3>Recent Sleep Logs</h3>
 <ul>
-{% for idx, sleep in enumerate(sleep_logs) %}
-    <li>{{ sleep[0] }} to {{ sleep[1] }}
+{% for entry, original_index in sleep_logs_with_index %}
+    <li>{{ entry[0] }} to {{ entry[1] }}
         <form method="POST" action="/delete_sleep" style="display:inline;">
-            <input type="hidden" name="index" value="{{ idx }}">
+            <input type="hidden" name="index" value="{{ original_index }}">
             <button type="submit" class="delete-button">Delete</button>
         </form>
     </li>
@@ -89,11 +215,26 @@ html = """
 </ul>
 
     <h2>Log Feeding</h2>
-<form method="POST" action="/log_feed">
-    <label for="feed_time">Feeding Time:</label>
-    <input type="datetime-local" id="feed_time" name="feed_time" required>
-    <label for="amount">Amount (oz):</label>
-    <input type="number" id="amount" name="amount" step="0.1" min="0">
+<form method="POST" action="/log_feed" id="feedingForm">
+    <label for="feeding_type">Feeding Type:</label>
+    <select id="feeding_type" name="feeding_type" required>
+        <option value="">Select...</option>
+        <option value="breast">Breast</option>
+        <option value="bottle">Bottle</option>
+    </select>
+
+    <!-- Breast Feeding Fields -->
+<div id="breastFields" style="display:none;">
+    <div style="margin-bottom: 0.5em;">
+        <button type="button" id="breastStartBtn" style="margin-right: 0.5em;">Start Feeding Now</button>
+        <button type="button" id="breastEndBtn">End Feeding Now</button>
+    </div>
+    
+    <label for="feed_start">Feeding Start:</label>
+    <input type="datetime-local" id="feed_start" name="feed_start" required>
+    <label for="feed_end">Feeding End:</label>
+    <input type="datetime-local" id="feed_end" name="feed_end" required>
+    
     <label for="side">Breast Side:</label>
     <select id="side" name="side">
         <option value="">N/A</option>
@@ -101,18 +242,65 @@ html = """
         <option value="Right">Right</option>
         <option value="Both">Both</option>
     </select>
+</div>
+
+<script>
+document.getElementById('breastStartBtn').addEventListener('click', function() {
+    const now = new Date();
+    const localISOTime = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
+    document.getElementById('feed_start').value = localISOTime;
+});
+
+document.getElementById('breastEndBtn').addEventListener('click', function() {
+    const now = new Date();
+    const localISOTime = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
+    document.getElementById('feed_end').value = localISOTime;
+});
+</script>
+
+
+    <!-- Bottle Feeding Fields -->
+    <div id="bottleFields" style="display:none;">
+        <label for="bottle_start">Feeding Start:</label>
+        <input type="datetime-local" id="bottle_start" name="bottle_start">
+        <label for="amount">Amount (oz):</label>
+        <input type="number" id="amount" name="amount" step="0.1" min="0">
+    </div>
+
     <label for="notes">Notes:</label>
     <input type="text" id="notes" name="notes">
     <button type="submit">Log Feeding</button>
 </form>
 
+<script>
+document.getElementById('feeding_type').addEventListener('change', function() {
+    const breastFields = document.getElementById('breastFields');
+    const bottleFields = document.getElementById('bottleFields');
+    
+    breastFields.style.display = this.value === 'breast' ? 'block' : 'none';
+    bottleFields.style.display = this.value === 'bottle' ? 'block' : 'none';
+    
+    // Toggle required attributes
+    document.querySelectorAll('#breastFields input, #breastFields select').forEach(el => {
+        el.required = this.value === 'breast';
+    });
+    document.querySelectorAll('#bottleFields input').forEach(el => {
+        el.required = this.value === 'bottle';
+    });
+});
+</script>
+
+
     <h3>Recent Feeding Logs</h3>
 <ul>
-{% for idx, feed in enumerate(feed_logs) %}
+{% for entry, original_index in feed_logs_with_index %}
     <li>
-        {{ feed[0] }} | {{ feed[1] }} oz | {{ feed[2] }} | {{ feed[3] if feed|length > 3 else '' }}
+        {{ entry[0] }} 
+        {{ entry[1] }} to {{ entry[2] }} | 
+        {{ entry[3] }} 
+        {% if entry[4] %} | {{ entry[4] }}{% endif %}
         <form method="POST" action="/delete_feed" style="display:inline;">
-            <input type="hidden" name="index" value="{{ idx }}">
+            <input type="hidden" name="index" value="{{ original_index }}">
             <button type="submit" class="delete-button">Delete</button>
         </form>
     </li>
@@ -121,6 +309,27 @@ html = """
 </body>
 </html>
 """
+
+def to_user_timezone(naive_dt, timezone_str):
+    """Convert naive UTC datetime to user's timezone."""
+    try:
+        utc_dt = naive_dt.replace(tzinfo=pytz.UTC)
+        user_tz = pytz.timezone(timezone_str)
+        return utc_dt.astimezone(user_tz)
+    except Exception:
+        return naive_dt
+
+def format_datetime(dtstr, timezone_str='UTC'):
+    """Convert 'YYYY-MM-DDTHH:MM' to local time."""
+    try:
+        naive_dt = datetime.strptime(dtstr, "%Y-%m-%dT%H:%M")
+        user_tz = pytz.timezone(timezone_str)
+        local_dt = naive_dt.replace(tzinfo=pytz.UTC).astimezone(user_tz)
+        return local_dt.strftime("%b %d, %Y %I:%M %p")
+    except Exception:
+        return dtstr
+app.jinja_env.globals.update(format_datetime=format_datetime)
+
 
 def load_baby_info():
     if os.path.exists(CSV_BABY):
@@ -143,19 +352,42 @@ def append_csv(filename, row):
     with open(filename, 'a', newline='') as csvfile:
         writer = csv.writer(csvfile)
         if not file_exists:
-            # Add headers based on filename
-            if filename == CSV_FEED:
-                writer.writerow(["Time", "Amount", "Side", "Notes"])
-            elif filename == CSV_SLEEP:
-                writer.writerow(["Start", "End"])
+            writer.writerow(["Type", "Start", "End", "Amount", "Side", "Notes"])
         writer.writerow(row)
+
 
 def load_recent(filename, num=5):
     if not os.path.exists(filename):
         return []
     with open(filename, newline='') as csvfile:
-        rows = list(csv.reader(csvfile))
-        return rows[-num:]
+        # Check for header
+        has_header = csv.Sniffer().has_header(csvfile.read(1024))
+        csvfile.seek(0)
+        reader = csv.reader(csvfile)
+        header_offset = 1 if has_header else 0
+        
+        # Read all rows
+        rows = list(reader)
+        
+        # Separate header and data
+        data_rows = rows[header_offset:]  # Skip header if present
+        
+        # Get most recent entries
+        recent = data_rows[-num:]
+        
+        # Calculate original CSV indexes
+        original_indexes = []
+        for i, entry in enumerate(recent):
+            # Find position in full CSV (header + data)
+            csv_index = header_offset + (len(data_rows) - len(recent)) + i
+            original_indexes.append(csv_index)
+        
+        return list(zip(recent, original_indexes))
+
+
+
+
+
 
 def load_all(filename):
     if not os.path.exists(filename):
@@ -171,6 +403,7 @@ def load_all(filename):
             pass
         return list(reader)
 
+
 def calculate_age(birthday_str):
     try:
         birthday = datetime.strptime(birthday_str, "%Y-%m-%d").date()
@@ -181,6 +414,22 @@ def calculate_age(birthday_str):
         return age_days, age_weeks
     except Exception:
         return None, None
+
+def get_current_sleep():
+    if os.path.exists(CURRENT_SLEEP_FILE):
+        with open(CURRENT_SLEEP_FILE, 'r') as f:
+            return f.read().strip()
+    return None
+
+def save_current_sleep(sleep_data):
+    with open(CURRENT_SLEEP_FILE, 'w') as f:
+        f.write(sleep_data)
+
+def clear_current_sleep():
+    if os.path.exists(CURRENT_SLEEP_FILE):
+        os.remove(CURRENT_SLEEP_FILE)
+
+
 
 def total_sleep_last_24h(sleep_logs):
     now = datetime.now()
@@ -323,67 +572,108 @@ def get_advice(age_weeks, sleep_logs, feed_logs, birthday, last_side=None):
     full_advice = base_advice + sleep_advice + feeding_advice
     return " ".join(full_advice) if full_advice else None
 
-def get_last_feed_info(feed_logs):
+def get_last_feed_info(feed_logs, user_tz='UTC'):
     if not feed_logs:
         return None, None, None, None
     last_feed = feed_logs[-1]
-    # Update indices to match new CSV structure [time, amount, side, notes]
-    last_feed_time_str = last_feed[0]
+    last_feed_time_str = last_feed[1]
+    
     try:
-        last_feed_time = datetime.strptime(last_feed_time_str, "%Y-%m-%dT%H:%M")
-        now = datetime.now()
-        delta = now - last_feed_time
+        # 1. Parse stored UTC time
+        utc_dt = datetime.strptime(last_feed_time_str, "%Y-%m-%dT%H:%M").replace(tzinfo=pytz.UTC)
+        
+        # 2. Get current UTC time
+        utc_now = datetime.now(pytz.UTC)
+        
+        # 3. Convert both to user's timezone
+        user_tz_obj = pytz.timezone(user_tz)
+        user_dt = utc_dt.astimezone(user_tz_obj)
+        user_now = utc_now.astimezone(user_tz_obj)
+        
+        # 4. Calculate difference
+        delta = user_now - user_dt
         hours_ago = int(delta.total_seconds() // 3600)
         minutes_ago = int((delta.total_seconds() % 3600) // 60)
-        last_feed_ago = f"{hours_ago}h {minutes_ago}m"
-        return last_feed_time_str.replace("T", " "), last_feed_ago, last_feed_time, now
-    except Exception:
+        
+        return user_dt.strftime("%b %d, %Y %I:%M %p"), f"{hours_ago}h {minutes_ago}m", utc_dt, utc_now
+    except Exception as e:
+        print(f"DEBUG [get_last_feed_info]: {str(e)}")
         return last_feed_time_str, "N/A", None, None
 
-def get_last_sleep_info(sleep_logs):
+def get_last_sleep_info(sleep_logs, user_tz='UTC'):
     if not sleep_logs:
         return None, None
     last_sleep = sleep_logs[-1]
     last_sleep_end_str = last_sleep[1]
+    
     try:
-        last_sleep_end = datetime.strptime(last_sleep_end_str, "%Y-%m-%dT%H:%M")
-        now = datetime.now()
-        delta = now - last_sleep_end
+        # 1. Parse stored UTC time
+        utc_dt = datetime.strptime(last_sleep_end_str, "%Y-%m-%dT%H:%M").replace(tzinfo=pytz.UTC)
+        
+        # 2. Get current UTC time
+        utc_now = datetime.now(pytz.UTC)
+        
+        # 3. Convert both to user's timezone
+        user_tz_obj = pytz.timezone(user_tz)
+        user_dt = utc_dt.astimezone(user_tz_obj)
+        user_now = utc_now.astimezone(user_tz_obj)
+        
+        # 4. Calculate difference in user's local time
+        delta = user_now - user_dt
         hours_ago = int(delta.total_seconds() // 3600)
         minutes_ago = int((delta.total_seconds() % 3600) // 60)
-        last_sleep_ago = f"{hours_ago}h {minutes_ago}m"
-        return last_sleep_end_str.replace("T", " "), last_sleep_ago
-    except Exception:
+        
+        return user_dt.strftime("%b %d, %Y %I:%M %p"), f"{hours_ago}h {minutes_ago}m"
+    except Exception as e:
+        print(f"DEBUG [get_last_sleep_info]: {str(e)}")
         return last_sleep_end_str, "N/A"
 
-def get_total_sleep_24h(sleep_logs):
-    now = datetime.now()
+def get_total_sleep_24h(sleep_logs, user_tz='UTC'):
+    user_tz_obj = pytz.timezone(user_tz)
+    utc_now = datetime.now(pytz.UTC)
+    user_now = utc_now.astimezone(user_tz_obj)
+    
     total_seconds = 0
     for sleep in sleep_logs:
         try:
-            start = datetime.strptime(sleep[0], "%Y-%m-%dT%H:%M")
-            end = datetime.strptime(sleep[1], "%Y-%m-%dT%H:%M")
-            if end > now:
-                end = now
-            if end > now - timedelta(days=1):
-                # Only count the portion in the last 24h
-                sleep_start = max(start, now - timedelta(days=1))
-                total_seconds += (end - sleep_start).total_seconds()
+            # Parse stored UTC times
+            start_utc = datetime.strptime(sleep[0], "%Y-%m-%dT%H:%M").replace(tzinfo=pytz.UTC)
+            end_utc = datetime.strptime(sleep[1], "%Y-%m-%dT%H:%M").replace(tzinfo=pytz.UTC)
+            
+            # Convert to user's timezone
+            start_user = start_utc.astimezone(user_tz_obj)
+            end_user = end_utc.astimezone(user_tz_obj)
+            
+            # Calculate within last 24h in user's time
+            if end_user > user_now - timedelta(days=1):
+                sleep_start = max(start_user, user_now - timedelta(days=1))
+                total_seconds += (end_user - sleep_start).total_seconds()
         except Exception:
             continue
     return round(total_seconds / 3600, 2)
 
-def get_total_feeds_24h(feed_logs):
-    now = datetime.now()
-    count = 0
+def get_total_feeds_24h(feed_logs, user_tz='UTC'):
+    user_tz_obj = pytz.timezone(user_tz)
+    utc_now = datetime.now(pytz.UTC)
+    user_now = utc_now.astimezone(user_tz_obj)
+    
+    total_count = 0
+    total_oz = 0.0
     for feed in feed_logs:
         try:
-            feed_time = datetime.strptime(feed[0], "%Y-%m-%dT%H:%M")  # [0] is time
-            if feed_time > now - timedelta(days=1):
-                count += 1
-        except Exception:
+            # Parse stored UTC time
+            feed_utc = datetime.strptime(feed[1], "%Y-%m-%dT%H:%M").replace(tzinfo=pytz.UTC)
+            feed_user = feed_utc.astimezone(user_tz_obj)
+            
+            if feed_user > user_now - timedelta(days=1):
+                total_count += 1
+                # Sum the ounces from column index 3
+                total_oz += float(feed[3])
+        except Exception as e:
+            print(f"Error processing feed log: {str(e)}")
             continue
-    return count
+    return total_count, round(total_oz, 1)
+
 
 def get_next_feed_suggestion(last_feed_time, now, age_weeks):
     if last_feed_time is None or now is None:
@@ -405,18 +695,33 @@ def get_next_feed_suggestion(last_feed_time, now, age_weeks):
 def get_last_breast_side(feed_logs):
     for feed in reversed(feed_logs):
         if len(feed) >= 3:  # [2] is the side
-            side = feed[2].strip()
+            side = feed[4].strip()
             if side in ["Left", "Right", "Both"]:
                 return side
     return None
 
+def calculate_feeding_amount(start_str, end_str):
+    """Estimate ounces based on feeding duration (avg 0.5-1 oz per minute)."""
+    try:
+        start = datetime.strptime(start_str, "%Y-%m-%dT%H:%M")
+        end = datetime.strptime(end_str, "%Y-%m-%dT%H:%M")
+        duration_min = (end - start).total_seconds() / 60
+        
+        # Use average of 0.75 oz per minute (range 0.5-1 oz/min)
+        estimated_oz = round(duration_min * 0.75, 1)
+        return max(0.5, estimated_oz)  # Ensure at least 0.5 oz
+    except Exception:
+        return 0.0
+
 
 @app.route("/", methods=["GET", "POST"])
 def home():
+    user_tz = session.get('user_timezone', 'UTC')
+    print(f"DEBUG [home]: User timezone = {user_tz}")
     name, birthday = load_baby_info()
     age_days, age_weeks = None, None
     advice = None
-    
+
     sleep_logs = load_all(CSV_SLEEP)
     feed_logs = load_all(CSV_FEED)
 
@@ -430,18 +735,33 @@ def home():
         save_baby_info(name, birthday)
         return redirect(url_for('home'))
 
-    sleep_logs = load_all(CSV_SLEEP)
-    feed_logs = load_all(CSV_FEED)
-    recent_sleep = sleep_logs[-5:] if sleep_logs else []
-    recent_feed = feed_logs[-5:] if feed_logs else []
+    recent_sleep_with_index = [
+        ([format_datetime(entry[0], user_tz), format_datetime(entry[1], user_tz)], idx)
+        for entry, idx in load_recent(CSV_SLEEP, 5)
+    ]
+    recent_feed_with_index = [
+    ([
+        "🍼" if entry[0] == "bottle" else "🤱",
+        format_datetime(entry[1], user_tz),  # Start time
+        format_datetime(entry[2], user_tz),  # End time
+        f"~{entry[3]} oz" if entry[0] == "breast" else f"{entry[3]} oz",
+        entry[4] if entry[0] == "breast" else "",
+        entry[5] if len(entry) > 5 else ""
+    ], idx)
+    for entry, idx in load_recent(CSV_FEED, 5)
+]
+    recent_sleep = [entry for entry, _ in recent_sleep_with_index]
+    recent_feed = [entry for entry, _ in recent_feed_with_index]
 
-    last_feed_time_str, last_feed_ago, last_feed_time, now = get_last_feed_info(feed_logs)
-    last_sleep_end_str, last_sleep_ago = get_last_sleep_info(sleep_logs)
-    total_sleep_24h = get_total_sleep_24h(sleep_logs)
-    total_feeds_24h = get_total_feeds_24h(feed_logs)
+    last_feed_time_str, last_feed_ago, last_feed_time, now = get_last_feed_info(feed_logs, user_tz)  # Added user_tz
+    last_sleep_end_str, last_sleep_ago = get_last_sleep_info(sleep_logs, user_tz)
+
+    total_sleep_24h = get_total_sleep_24h(sleep_logs, user_tz)
+    total_feeds_count, total_feeds_oz = get_total_feeds_24h(feed_logs, user_tz)
     next_feed_suggestion = get_next_feed_suggestion(last_feed_time, now, age_weeks)
     last_side = get_last_breast_side(feed_logs)
     advice = get_advice(age_weeks, sleep_logs, feed_logs, birthday, last_side)
+    current_sleep = get_current_sleep()
 
     return render_template_string(
         html,
@@ -452,43 +772,126 @@ def home():
         advice=advice,
         sleep_logs=recent_sleep,
         feed_logs=recent_feed,
+        sleep_logs_with_index=recent_sleep_with_index,
+        feed_logs_with_index=recent_feed_with_index,
         last_feed_time_str=last_feed_time_str,
         last_feed_ago=last_feed_ago,
         last_sleep_end_str=last_sleep_end_str,
         last_sleep_ago=last_sleep_ago,
         total_sleep_24h=total_sleep_24h,
-        total_feeds_24h=total_feeds_24h,
-        next_feed_suggestion=next_feed_suggestion
+        total_feeds_count=total_feeds_count,
+        total_feeds_oz=total_feeds_oz,
+        next_feed_suggestion=next_feed_suggestion,
+        current_sleep=current_sleep,
+        user_timezone=user_tz
     )
 
 @app.route("/log_sleep", methods=["POST"])
 def log_sleep():
-    sleep_start = request.form["sleep_start"]
-    sleep_end = request.form["sleep_end"]
-    append_csv(CSV_SLEEP, [sleep_start, sleep_end])
+    user_tz = session.get('user_timezone', 'UTC')
+    try:
+        sleep_start = request.form.get("sleep_start")
+        sleep_end = request.form.get("sleep_end")
+        was_tracked = request.form.get("sleep_was_tracked") == "1"
+
+        # Get temporary sleep data if exists
+        current_sleep = get_current_sleep()
+        auto_start, auto_end = None, None
+        if current_sleep and "|" in current_sleep:
+            auto_start, auto_end = current_sleep.split("|")
+
+        # Convert submitted times to UTC
+        user_tz_obj = pytz.timezone(user_tz)
+        naive_start = datetime.strptime(sleep_start, "%Y-%m-%dT%H:%M")
+        naive_end = datetime.strptime(sleep_end, "%Y-%m-%dT%H:%M")
+        local_start = user_tz_obj.localize(naive_start, is_dst=None)
+        local_end = user_tz_obj.localize(naive_end, is_dst=None)
+        utc_start = local_start.astimezone(pytz.UTC).strftime("%Y-%m-%dT%H:%M")
+        utc_end = local_end.astimezone(pytz.UTC).strftime("%Y-%m-%dT%H:%M")
+
+        # Always log if times match server-tracked session
+        if was_tracked and current_sleep:
+            append_csv(CSV_SLEEP, [utc_start, utc_end])
+            clear_current_sleep()
+        else:
+            # Log manual entries
+            append_csv(CSV_SLEEP, [utc_start, utc_end])
+
+    except Exception as e:
+        print(f"Error logging sleep: {str(e)}")
+    
     return redirect(url_for('home'))
+
+
+
 
 @app.route("/log_feed", methods=["POST"])
 def log_feed():
-    feed_time = request.form["feed_time"]
-    amount = request.form["amount"]
-    side = request.form["side"]
-    notes = request.form["notes"]
-    append_csv(CSV_FEED, [feed_time, amount, side, notes])
+    user_tz = session.get('user_timezone', 'UTC')
+    feeding_type = request.form["feeding_type"]
+    
+    try:
+        if feeding_type == "breast":
+            # Process breast feeding
+            naive_start = datetime.strptime(request.form["feed_start"], "%Y-%m-%dT%H:%M")
+            naive_end = datetime.strptime(request.form["feed_end"], "%Y-%m-%dT%H:%M")
+            side = request.form["side"]
+            
+            # Convert to UTC
+            user_tz_obj = pytz.timezone(user_tz)
+            local_start = user_tz_obj.localize(naive_start, is_dst=None)
+            local_end = user_tz_obj.localize(naive_end, is_dst=None)
+            utc_start = local_start.astimezone(pytz.UTC).strftime("%Y-%m-%dT%H:%M")
+            utc_end = local_end.astimezone(pytz.UTC).strftime("%Y-%m-%dT%H:%M")
+            
+            # Calculate amount from duration
+            duration = (local_end - local_start).total_seconds() / 60
+            amount = round(duration * 0.75, 1)  # 0.75 oz/min estimate
+            
+            row = ["breast", utc_start, utc_end, amount, side, request.form["notes"]]
+            
+        elif feeding_type == "bottle":
+            # Process bottle feeding
+            naive_start = datetime.strptime(request.form["bottle_start"], "%Y-%m-%dT%H:%M")
+            amount = float(request.form["amount"])
+            
+            # Convert to UTC
+            user_tz_obj = pytz.timezone(user_tz)
+            local_start = user_tz_obj.localize(naive_start, is_dst=None)
+            utc_start = local_start.astimezone(pytz.UTC).strftime("%Y-%m-%dT%H:%M")
+            
+            # Estimate end time (0.5 oz/min consumption rate)
+            duration = amount / 0.5  # minutes
+            estimated_end = local_start + timedelta(minutes=duration)
+            utc_end = estimated_end.astimezone(pytz.UTC).strftime("%Y-%m-%dT%H:%M")
+            
+            row = ["bottle", utc_start, utc_end, amount, "", request.form["notes"]]
+            
+        append_csv(CSV_FEED, row)
+        
+    except Exception as e:
+        print(f"Error logging feed: {str(e)}")
+    
     return redirect(url_for('home'))
+
 
 @app.route("/delete_sleep", methods=["POST"])
 def delete_sleep():
-    index = int(request.form["index"])
-    if os.path.exists(CSV_SLEEP):
-        with open(CSV_SLEEP, newline='') as csvfile:
-            rows = list(csv.reader(csvfile))
-        if 0 <= index < len(rows):
-            rows.pop(index)
-            with open(CSV_SLEEP, 'w', newline='') as csvfile:
-                writer = csv.writer(csvfile)
-                writer.writerows(rows)
+    try:
+        index = int(request.form["index"])
+        if os.path.exists(CSV_SLEEP):
+            with open(CSV_SLEEP, newline='') as csvfile:
+                rows = list(csv.reader(csvfile))
+            if 0 <= index < len(rows):
+                rows.pop(index)
+                with open(CSV_SLEEP, 'w', newline='') as csvfile:
+                    writer = csv.writer(csvfile)
+                    writer.writerows(rows)
+    except Exception as e:
+        print(f"Error deleting sleep: {str(e)}")
     return redirect(url_for('home'))
+
+
 
 @app.route("/delete_feed", methods=["POST"])
 def delete_feed():
@@ -502,6 +905,38 @@ def delete_feed():
                 writer = csv.writer(csvfile)
                 writer.writerows(rows)
     return redirect(url_for('home'))
+
+
+@app.route("/start_sleep", methods=["POST"])
+def start_sleep():
+    user_tz = session.get('user_timezone', 'UTC')
+    try:
+        # Get current time in UTC
+        utc_now = datetime.now(pytz.UTC).strftime("%Y-%m-%dT%H:%M")
+        save_current_sleep(utc_now)
+        return jsonify(status="success", start_time=utc_now)
+    except Exception as e:
+        return jsonify(status="error", message=str(e)), 500
+
+@app.route("/end_sleep", methods=["POST"])
+def end_sleep():
+    user_tz = session.get('user_timezone', 'UTC')
+    try:
+        start_time = get_current_sleep()
+        if not start_time:
+            return jsonify(status="error", message="No active sleep session"), 400
+
+        # Get current UTC time but DON'T log yet
+        utc_end = datetime.now(pytz.UTC).strftime("%Y-%m-%dT%H:%M")
+        
+        # Save both times temporarily
+        save_current_sleep(f"{start_time}|{utc_end}")  # Store as "start|end"
+
+        return jsonify(status="success", end_time=utc_end)
+    except Exception as e:
+        return jsonify(status="error", message=str(e)), 500
+
+
 
 if __name__ == "__main__":
     app.run(debug=True)
