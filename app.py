@@ -78,32 +78,275 @@ if(!sessionStorage.getItem('sleep_start')) {
 </script>
     <title>Baby Sleep and Feeding Tracker</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-      body { font-family: Arial, sans-serif; margin: 12px; }
-      input, button { font-size: 1em; }
-      form { margin-bottom: 1.5em; }
-      .advice-box { background:#f0f0f0; padding:1em; border-radius:8px; margin-bottom: 1em; }
-      @media (max-width: 600px) {
-        body { font-size: 1.1em; }
-        input, button { width: 100%; margin-bottom: 0.5em; }
-      }
-    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Comic+Neue:wght@700&family=Nunito:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+    :root {
+        --primary: #FFB6C1; /* Light pink */
+        --secondary: #89CFF0; /* Baby blue */
+        --accent: #E1BEE7; /* Soft lavender */
+        --background: #FFF9FB; /* Warm white */
+        --text: #4A4A4A; /* Soft black */
+        --success: #C8E6C9; /* Gentle green */
+    }
+
+button[type="submit"] {
+    margin: 15px 0 0 0;
+    font-size: 1.1em;
+    border-radius: 12px;
+    width: 100%;
+    display: block;
+}
+
+    body {
+        font-family: 'Nunito', 'Comic Neue', cursive, sans-serif;
+        background: var(--background);
+        color: var(--text);
+        margin: 0;
+        padding: 20px;
+        max-width: 800px;
+        margin: 0 auto;
+    }
+
+    h1 {
+        color: var(--secondary);
+        font-size: 2.5em;
+        text-align: center;
+        margin: 20px 0;
+        font-weight: 700;
+        text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+    }
+
+h2 {
+    color: var(--primary);
+    border-left: 5px solid var(--accent);
+    padding-left: 15px;
+    margin: 30px 0 20px;
+    font-size: 1.8em;
+    background: none;
+    display: block;
+}
+
+
+
+
+
+.main-form {
+    display: block;
+    background: white;
+    padding: 25px;
+    border-radius: 15px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+    margin-bottom: 30px;
+}
+
+
+.main-form label {
+    display: block;
+    margin: 15px 0 5px 0;
+    font-weight: 600;
+    color: var(--primary);
+}
+
+.main-form input, 
+.main-form select, 
+.main-form textarea {
+    width: 100%;
+    box-sizing: border-box;
+    margin-bottom: 15px;
+}
+
+.form-row {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 15px;
+}
+
+.form-row > div {
+    flex: 1;
+}
+
+.form-row label {
+    margin-top: 0;
+}
+
+
+    input, select, button {
+        font-family: inherit;
+        padding: 12px 20px;
+        border: 2px solid var(--accent);
+        border-radius: 8px;
+        margin: 8px 0;
+        transition: all 0.3s ease;
+    }
+
+    button {
+        background: linear-gradient(145deg, var(--primary), var(--secondary));
+        color: white;
+        border: none;
+        padding: 12px 25px;
+        cursor: pointer;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+
+    button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+    }
+
+    .advice-box {
+        background: linear-gradient(145deg, #ffffff, var(--background));
+        border-radius: 15px;
+        padding: 25px;
+        margin: 25px 0;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        border: 2px solid var(--accent);
+    }
+
+    .logs-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 20px;
+        margin: 20px 0;
+    }
+
+.log-entry {
+    background: white;
+    border-radius: 12px;
+    border-left: 5px solid var(--secondary);
+    min-height: 60px;
+    padding: 15px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.log-text {
+    flex-grow: 1;
+    word-break: normal;
+    white-space: normal;
+}
+
+
+
+
+.delete-button {
+    background: var(--accent) !important;
+    padding: 6px 12px;
+    font-size: 0.8em;
+    margin: 0;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+.delete-form {
+    margin: 0;
+    flex-shrink: 0;
+}
+
+
+
+    #sleepStatus {
+        background: var(--success);
+        padding: 15px;
+        border-radius: 10px;
+        margin: 15px 0;
+        text-align: center;
+        font-weight: 600;
+    }
+
+    .log-container {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    }
+
+    .log-btn-row,
+    .action-btn-row {
+        margin: 0;
+        padding: 0;
+    }
+
+
+.log-btn-row button,
+.action-btn-row button {
+    margin: 0;
+}
+
+.action-btn-row {
+    margin-bottom: 20px;
+}
+
+.action-btn-row button {
+    width: 48%;
+    display: inline-block;
+    margin: 0 1% 0 0;
+}
+
+.action-btn-row button:last-child {
+    margin-right: 0;
+}
+
+
+
+.logs-grid h2 {
+    padding: 10px 24px 10px 15px;
+}
+
+
+
+
+
+
+    @media (max-width: 600px) {
+        body {
+            padding: 10px;
+            font-size: 16px;
+        }
+        
+        h1 {
+            font-size: 2em;
+        }
+        
+        form {
+            padding: 15px;
+        }
+    }
+</style>
+
 </head>
 <body>
-    <h1>Baby Sleep and Feeding Tracker</h1>
+    <h1>👶 Baby Care Companion</h1>
     <h2>Baby Info</h2>
-    <form method="POST" action="/">
-        <label for="name">Baby's Name:</label>
-        <input type="text" id="name" name="name" value="{{ name or '' }}" required>
-        <label for="birthday">Birthday:</label>
-        <input type="date" id="birthday" name="birthday" value="{{ birthday or '' }}" required>
-        <button type="submit">Save</button>
-    </form>
+<form method="POST" action="/" class="main-form">
+    <div class="form-row">
+        <div>
+            <label for="name">Baby's Name:</label>
+            <input type="text" id="name" name="name" value="{{ name or '' }}" required>
+        </div>
+        <div>
+            <label for="birthday">Birthday:</label>
+            <input type="date" id="birthday" name="birthday" value="{{ birthday or '' }}" required>
+        </div>
+    </div>
+    <button type="submit">💾 Save</button>
+</form>
+
     {% if name and birthday %}
-        <p><strong>Name:</strong> {{ name }}</p>
-        <p><strong>Birthday:</strong> {{ birthday }}</p>
-        <p><strong>Age:</strong> {{ age_days }} days ({{ age_weeks }} weeks)</p>
-    {% endif %}
+    <div style="text-align: center; margin: 30px 0;">
+        <div style="display: inline-block; background: white; padding: 20px; border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+            <p style="font-size: 1.2em; margin: 0;"><span style="color: var(--primary);">🌟 Name:</span> {{ name }}</p>
+            <p style="font-size: 1.2em; margin: 10px 0;"><span style="color: var(--secondary);">🎂 Birthday:</span> {{ birthday }}</p>
+            <div style="background: var(--accent); padding: 10px; border-radius: 8px; margin: 10px 0;">
+                <p style="margin: 0; color: white;">Age: {{ age_days }} days ({{ age_weeks }} weeks)</p>
+            </div>
+        </div>
+    </div>
+{% endif %}
+
 
     {% if advice %}
         <div class="advice-box">
@@ -126,25 +369,33 @@ if(!sessionStorage.getItem('sleep_start')) {
     </div>
 
     <h2>Log Sleep</h2>
-<div id="sleepStatus" style="margin-bottom:1em;">
-</div>
+<div id="sleepStatus" style="margin-bottom:1em; display: none;"></div>
 
-<form method="POST" action="/log_sleep" id="sleepForm">
-    <div style="margin-bottom: 0.5em;">
+<form method="POST" action="/log_sleep" id="sleepForm" class="main-form">
+    <div class="action-btn-row">
         <button type="button" id="sleepStartBtn" {% if current_sleep %}disabled{% endif %}>
-            Start Sleep Now
+            🌙 Start Sleep Now
         </button>
         <button type="button" id="sleepEndBtn" {% if not current_sleep %}disabled{% endif %}>
-            End Sleep Now
+            🌅 End Sleep Now
         </button>
     </div>
-    <label for="sleep_start">Sleep Start:</label>
-    <input type="datetime-local" id="sleep_start" name="sleep_start">
-    <label for="sleep_end">Sleep End:</label>
-    <input type="datetime-local" id="sleep_end" name="sleep_end">
+
+    <div class="form-row">
+        <div>
+            <label for="sleep_start">Sleep Start:</label>
+            <input type="datetime-local" id="sleep_start" name="sleep_start">
+        </div>
+        <div>
+            <label for="sleep_end">Sleep End:</label>
+            <input type="datetime-local" id="sleep_end" name="sleep_end">
+        </div>
+    </div>
+
     <input type="hidden" id="sleep_was_tracked" name="sleep_was_tracked" value="0">
-    <button type="submit">Log Sleep</button>
+    <button type="submit">💤 Log Sleep</button>
 </form>
+
 
 
 <script>
@@ -166,6 +417,7 @@ document.getElementById('sleepStartBtn').addEventListener('click', function() {
                         minute: '2-digit',
                         timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
                     })}`;
+                document.getElementById('sleepStatus').style.display = 'block';
                 document.getElementById('sleepEndBtn').disabled = false;
                 document.getElementById('sleepStartBtn').disabled = true;
             }
@@ -184,6 +436,7 @@ document.getElementById('sleepEndBtn').addEventListener('click', function() {
 
                 document.getElementById('sleep_end').value = localISOTime;
                 document.getElementById('sleepStatus').innerHTML = '';
+                document.getElementById('sleepStatus').style.display = 'none';
                 document.getElementById('sleepEndBtn').disabled = true;
                 document.getElementById('sleepStartBtn').disabled = false;
 
@@ -200,34 +453,30 @@ document.getElementById('sleepEndBtn').addEventListener('click', function() {
 </script>
 
 
+<h2>Log Feeding</h2>
+<form method="POST" action="/log_feed" id="feedingForm" class="main-form">
+    <div class="form-row">
+        <div>
+            <label for="feeding_type">Feeding Type:</label>
+            <select id="feeding_type" name="feeding_type" required>
+                <option value="">Select...</option>
+                <option value="breast">Breast</option>
+                <option value="bottle">Bottle</option>
+            </select>
+        </div>
+        <div>
+            <label for="notes">Notes:</label>
+            <input type="text" id="notes" name="notes">
+        </div>
+    </div>
 
-
-    <h3>Recent Sleep Logs</h3>
-<ul>
-{% for entry, original_index in sleep_logs_with_index %}
-    <li>{{ entry[0] }} to {{ entry[1] }}
-        <form method="POST" action="/delete_sleep" style="display:inline;">
-            <input type="hidden" name="index" value="{{ original_index }}">
-            <button type="submit" class="delete-button">Delete</button>
-        </form>
-    </li>
-{% endfor %}
-</ul>
-
-    <h2>Log Feeding</h2>
-<form method="POST" action="/log_feed" id="feedingForm">
-    <label for="feeding_type">Feeding Type:</label>
-    <select id="feeding_type" name="feeding_type" required>
-        <option value="">Select...</option>
-        <option value="breast">Breast</option>
-        <option value="bottle">Bottle</option>
-    </select>
 
     <!-- Breast Feeding Fields -->
 <div id="breastFields" style="display:none;">
     <div style="margin-bottom: 0.5em;">
-        <button type="button" id="breastStartBtn" style="margin-right: 0.5em;">Start Feeding Now</button>
-        <button type="button" id="breastEndBtn">End Feeding Now</button>
+        <button type="button" id="breastStartBtn" style="margin-right: 0.5em;">🤱 Start Feeding Now</button>
+<button type="button" id="breastEndBtn">🛑 End Feeding Now</button>
+
     </div>
     
     <label for="feed_start">Feeding Start:</label>
@@ -260,16 +509,37 @@ document.getElementById('breastEndBtn').addEventListener('click', function() {
 
 
     <!-- Bottle Feeding Fields -->
-    <div id="bottleFields" style="display:none;">
-        <label for="bottle_start">Feeding Start:</label>
-        <input type="datetime-local" id="bottle_start" name="bottle_start">
-        <label for="amount">Amount (oz):</label>
-        <input type="number" id="amount" name="amount" step="0.1" min="0">
-    </div>
+<div id="bottleFields" style="display:none;">
+    <label for="bottle_start">Feeding Start:</label>
+    <input type="datetime-local" id="bottle_start" name="bottle_start">
+    <button type="button" id="bottleSetNowBtn">🕒 Set Now</button>
 
-    <label for="notes">Notes:</label>
-    <input type="text" id="notes" name="notes">
-    <button type="submit">Log Feeding</button>
+    <label for="amount">Amount (oz):</label>
+    <input type="number" id="amount" name="amount" step="0.1" min="0">
+</div>
+
+<script>
+document.getElementById('bottleSetNowBtn').addEventListener('click', function() {
+    const now = new Date();
+    // Format as YYYY-MM-DDTHH:MM in local time
+    const pad = n => n.toString().padStart(2, '0');
+    const localISOTime = [
+        now.getFullYear(),
+        pad(now.getMonth() + 1),
+        pad(now.getDate())
+    ].join('-') + 'T' + [
+        pad(now.getHours()),
+        pad(now.getMinutes())
+    ].join(':');
+    document.getElementById('bottle_start').value = localISOTime;
+});
+</script>
+
+
+
+    <button type="submit">🍼 Log Feeding</button>
+
+
 </form>
 
 <script>
@@ -290,22 +560,53 @@ document.getElementById('feeding_type').addEventListener('change', function() {
 });
 </script>
 
+<div class="logs-grid">
+    <div>
+        <h2>💤 Recent Sleep</h2>
+        <div class="log-container">  <!-- CHANGED FROM logs-grid -->
+            {% for entry, original_index in sleep_logs_with_index %}
+            <div class="log-entry">
+    <span class="log-text">{{ entry[0] }} to {{ entry[1] }}</span>
+    <form method="POST" action="/delete_sleep" class="delete-form">
+    <input type="hidden" name="index" value="{{ original_index }}">
+    <button type="submit" class="delete-button">🗑️ Delete</button>
+</form>
 
-    <h3>Recent Feeding Logs</h3>
-<ul>
-{% for entry, original_index in feed_logs_with_index %}
-    <li>
-        {{ entry[0] }} 
-        {{ entry[1] }} to {{ entry[2] }} | 
-        {{ entry[3] }} 
-        {% if entry[4] %} | {{ entry[4] }}{% endif %}
-        <form method="POST" action="/delete_feed" style="display:inline;">
-            <input type="hidden" name="index" value="{{ original_index }}">
-            <button type="submit" class="delete-button">Delete</button>
-        </form>
-    </li>
-{% endfor %}
-</ul>
+</div>
+
+            {% endfor %}
+        </div>
+    </div>
+
+    <div>
+        <h2>🍼 Recent Feedings</h2>
+        <div class="log-container">  <!-- CHANGED FROM logs-grid -->
+            {% for entry, original_index in feed_logs_with_index %}
+            <div class="log-entry">
+    <span class="log-text">
+        {{ entry[0] }} {# Icon #}
+        {{ entry[1] }} {# Start time #}
+        {% if entry[0] == "🤱" or entry[2] != entry[1] %} {# Show 'to end_time' if breast or if bottle end time is different (for bottle this means duration was >0) #}
+            to {{ entry[2] }} {# End time #}
+        {% endif %}
+        ({{ entry[3] }}) {# Amount #}
+        {% if entry[4] %} {{ entry[4] }} {% endif %} {# Side, if breast #}
+        {% if entry[5] %} <br><em style="font-size:0.9em; color: #555;">Notes: {{ entry[5] }}</em> {% endif %} {# Notes, if any #}
+    </span>
+    <form method="POST" action="/delete_feed" class="delete-form">
+    <input type="hidden" name="index" value="{{ original_index }}">
+    <button type="submit" class="delete-button">🗑️ Delete</button>
+</form>
+
+</div>
+
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+
+
 </body>
 </html>
 """
@@ -372,17 +673,33 @@ def load_recent(filename, num=5):
         # Separate header and data
         data_rows = rows[header_offset:]  # Skip header if present
         
+        # Create list of (entry, original_csv_index) tuples
+        entries_with_indexes = []
+        for i, entry in enumerate(data_rows):
+            csv_index = header_offset + i
+            entries_with_indexes.append((entry, csv_index))
+        
+        # Sort by start time in descending order (most recent first)
+        try:
+            from datetime import datetime
+            # Determine sort column based on CSV type
+            if filename == CSV_FEED:
+                sort_column = 1  # Feeding logs: Start time is column 1
+            else:
+                sort_column = 0  # Sleep logs: Start time is column 0
+            
+            entries_with_indexes.sort(
+                key=lambda x: datetime.strptime(x[0][sort_column], "%Y-%m-%dT%H:%M"), 
+                reverse=True
+            )
+        except Exception as e:
+            # If parsing fails, fall back to original order
+            print(f"Error sorting by date: {e}")
+        
         # Get most recent entries
-        recent = data_rows[-num:]
+        recent_with_indexes = entries_with_indexes[:num]
         
-        # Calculate original CSV indexes
-        original_indexes = []
-        for i, entry in enumerate(recent):
-            # Find position in full CSV (header + data)
-            csv_index = header_offset + (len(data_rows) - len(recent)) + i
-            original_indexes.append(csv_index)
-        
-        return list(zip(recent, original_indexes))
+        return recent_with_indexes
 
 
 
